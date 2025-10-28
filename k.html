@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KOBRA & OTP Login</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Poppins', sans-serif;
+    }
+
+    body {
+      background: radial-gradient(circle at center, #000010 0%, #000 100%);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .smoke {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200%;
+      height: 200%;
+      background: url('https://i.imgur.com/9cP6P4K.png') repeat;
+      opacity: 0.15;
+      animation: moveSmoke 60s linear infinite;
+      filter: blur(80px) brightness(1.2);
+      z-index: 0;
+    }
+
+    @keyframes moveSmoke {
+      from { transform: translate(0, 0) scale(1.1); }
+      to { transform: translate(-50%, -50%) scale(1.3); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 2;
+      background: rgba(15, 15, 25, 0.9);
+      border: 1px solid #00eaff;
+      border-radius: 20px;
+      padding: 40px 30px;
+      width: 330px;
+      text-align: center;
+      box-shadow: 0 0 30px #00bfff, inset 0 0 10px #0077ff;
+      animation: fadeIn 2s ease-in-out, pulse 3s infinite alternate;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse {
+      from { box-shadow: 0 0 20px #00bfff, inset 0 0 5px #0077ff; }
+      to { box-shadow: 0 0 40px #00eaff, inset 0 0 15px #00bfff; }
+    }
+
+    .logo {
+      width: 130px;
+      margin-bottom: 20px;
+      filter: drop-shadow(0 0 20px #00bfff);
+      animation: glow 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes glow {
+      from { filter: drop-shadow(0 0 5px #00bfff); }
+      to { filter: drop-shadow(0 0 25px #00eaff); }
+    }
+
+    h2 {
+      color: #00eaff;
+      font-size: 22px;
+      margin-bottom: 25px;
+      text-shadow: 0 0 15px #00bfff;
+    }
+
+    .input-group {
+      margin-bottom: 20px;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 12px 15px;
+      border: none;
+      border-radius: 25px;
+      outline: none;
+      background: #111;
+      color: #00eaff;
+      font-size: 16px;
+      box-shadow: 0 0 10px #00bfff inset;
+      transition: 0.3s;
+    }
+
+    .input-group input:focus {
+      box-shadow: 0 0 20px #00eaff inset;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 25px;
+      background: linear-gradient(90deg, #00bfff, #0077ff);
+      color: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      box-shadow: 0 0 15px #00bfff;
+      transition: 0.3s;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background: linear-gradient(90deg, #0077ff, #00bfff);
+      box-shadow: 0 0 30px #00eaff;
+    }
+
+    #adminPanel {
+      display: none;
+      margin-top: 20px;
+    }
+
+    #numbersList {
+      margin-top: 15px;
+      color: #00eaff;
+      font-size: 14px;
+      max-height: 150px;
+      overflow-y: auto;
+      text-align: left;
+    }
+
+    .footer {
+      color: #00bfff;
+      font-size: 12px;
+      margin-top: 15px;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="smoke"></div>
+
+  <div class="container" id="loginBox">
+    <img src="1000012246.jpg" alt="KOBRA Logo" class="logo">
+    <h2>KOBRA & OTP GROUP ⚡</h2>
+
+    <div class="input-group">
+      <input type="text" id="username" placeholder="Username">
+    </div>
+    <div class="input-group">
+      <input type="password" id="password" placeholder="Password">
+    </div>
+    <button onclick="login()">Login</button>
+    <div class="footer">Powered by KOBRA SYSTEMS © 2025</div>
+  </div>
+
+  <!-- لوحة المالك -->
+  <div class="container" id="adminPanel">
+    <h2>لوحة تحكم المالك ⚡</h2>
+    <input type="file" id="fileInput" accept=".txt" style="display:none" onchange="handleFile(event)">
+    <button onclick="document.getElementById('fileInput').click()">📁 رفع ملف</button>
+    <button onclick="generateAccounts()">⚙️ توليد حسابات</button>
+    <div id="numbersList"></div>
+  </div>
+
+  <script>
+    function login() {
+      const user = document.getElementById('username').value.trim();
+      const pass = document.getElementById('password').value.trim();
+
+      // تحقق من الحساب
+      if (user === "mm" && pass === "mm") {
+        document.getElementById('loginBox').style.display = 'none';
+        document.getElementById('adminPanel').style.display = 'block';
+      } else {
+        alert("❌ بيانات الدخول غير صحيحة!");
+      }
+    }
+
+    // رفع ملف وقراءة الأرقام
+    function handleFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        const numbers = content.match(/\d+/g); // يلتقط كل الأرقام
+        if (numbers) {
+          document.getElementById('numbersList').innerHTML =
+            "<b>📋 الأرقام المضافة:</b><br>" + numbers.join("<br>");
+        } else {
+          document.getElementById('numbersList').innerHTML = "⚠️ لم يتم العثور على أرقام في الملف.";
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // توليد حسابات تجريبية
+    function generateAccounts() {
+      let result = "<b>🔐 الحسابات المولدة:</b><br>";
+      for (let i = 1; i <= 5; i++) {
+        const username = "user" + Math.floor(Math.random() * 9999);
+        const password = Math.random().toString(36).substring(2, 8);
+        result += `👤 ${username} | 🔑 ${password}<br>`;
+      }
+      document.getElementById('numbersList').innerHTML = result;
+    }
+  </script>
+</body>
+</html>
