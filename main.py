@@ -1,131 +1,186 @@
-import re
+import requests
+import time
+import json
 import os
-import asyncio
-from datetime import datetime
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from telethon import TelegramClient, events
 
-# ================== TELEGRAM CONFIG ==================
-API_ID = 38077264
-API_HASH = "4dac72033d68a6bab7586e67edb182ae"
-SESSION_NAME = "selva_session"
-SOURCE_CHANNEL = "TGW_Otp_Station"  # ضع اسم القناة هنا
+# ================== CONFIG ==================
+BOT_TOKEN = "8584758167:AAG1m7fJNsMhzYh00q1v4DNyy000L406ASI"
 
-# ================== FILTER ==================
-REQUIRED_SERVICE = "💬 Service: Telegram"
-NUMBER_REGEX = re.compile(r"📞\s*Number:\s*(\d+)")
-ALLOWED_CODES = ("254", "994", "996", "216", "263")
+SITE_URL = "https://kobrapanel-production.up.railway.app"
+LOGIN_URL = SITE_URL + "/login"
+API_URL = SITE_URL + "/api"
+SITE_PASSWORD = "selva1"
+
+CHECK_INTERVAL = 5  # ثواني
+DATA_FILE = "users.json"
+
+PANEL_LINK = "https://panel-production-15f6.up.railway.app/"
 
 # ================== STORAGE ==================
-MAX_MESSAGES = 2  # نعرض آخر رسالتين فقط
-messages_cache = []
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({}, f)
 
-# ================== APP ==================
-app = FastAPI()
-client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+def load_users():
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-# ================== HELPERS ==================
-def extract_number(text: str):
-    m = NUMBER_REGEX.search(text)
-    return m.group(1) if m else None
+def save_users(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def is_allowed(number: str):
-    return any(number.startswith(code) for code in ALLOWED_CODES)
+# ================== TELEGRAM API ==================
+def tg(method, payload=None):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
+    r = requests.post(url, json=payload, timeout=20)
+    return r.json()
 
-# ================== TELETHON ==================
-@client.on(events.NewMessage(chats=SOURCE_CHANNEL))
-async def handler(event):
-    text = event.message.message
-    if not text:
+def send_message(chat_id, text, keyboard=None):
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    if keyboard:
+        payload["reply_markup"] = keyboard
+    tg("sendMessage", payload)
+
+# ================== SITE SESSION ==================
+session = requests.Session()
+
+def site_login():
+    r = session.post(
+        LOGIN_URL,
+        data={"password": SITE_PASSWORD},
+        allow_redirects=True,
+        timeout=20
+    )
+    if r.status_code not in (200, 302):
+        raise Exception("❌ Site login failed")
+
+# ================== BOT LOGIC ==================
+users = load_users()
+sent_messages = set()
+offset = 0
+
+def main_menu():
+    return {
+        "inline_keyboard": [
+            [{"text": "➕ إضافة OTP", "callback_data": "add_otp"}]
+        ]
+    }
+
+def handle_updates():
+    global offset, users
+
+    r = requests.get(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
+        params={"offset": offset, "timeout": 30},
+        timeout=40
+    )
+
+    data = r.json()
+    if not data.get("ok"):
         return
 
-    # فلترة حسب الخدمة المطلوبة
-    if REQUIRED_SERVICE not in text:
+    for update in data["result"]:
+        offset = update["update_id"] + 1
+
+        # ===== Messages =====
+        if "message" in update:
+            msg = update["message"]
+            chat_id = msg["chat"]["id"]
+            text = msg.get("text", "")
+            user_id = str(msg["from"]["id"])
+
+            if text == "/start":
+                send_message(
+                    chat_id,
+                    "👋 أهلاً بك في SELVA PANEL OTP\n\nاضغط الزر لإضافة جروب استقبال OTP",
+                    main_menu()
+                )
+
+            elif users.get(user_id, {}).get("waiting_group"):
+                try:
+                    group_id = int(text.strip())
+                    users[user_id] = {
+                        "group_id": group_id,
+                        "waiting_group": False
+                    }
+                    save_users(users)
+
+                    send_message(
+                        chat_id,
+                        "✅ تم حفظ ID الجروب\n\nسيتم إرسال OTP تلقائيًا"
+                    )
+                except:
+                    send_message(chat_id, "❌ ابعت ID الجروب رقم فقط")
+
+        # ===== Buttons =====
+        if "callback_query" in update:
+            cq = update["callback_query"]
+            user_id = str(cq["from"]["id"])
+            chat_id = cq["message"]["chat"]["id"]
+            data_cb = cq["data"]
+
+            if data_cb == "add_otp":
+                users[user_id] = {
+                    "waiting_group": True
+                }
+                save_users(users)
+
+                send_message(
+                    chat_id,
+                    "📥 ابعت الآن ID الجروب\n\nمثال:\n-1001234567890"
+                )
+
+# ================== OTP SENDER ==================
+def send_otps():
+    r = session.get(API_URL, timeout=20)
+    if r.status_code != 200:
         return
 
-    number = extract_number(text)
-    if not number or not is_allowed(number):
-        return
+    messages = r.json()
 
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    formatted = f"[{timestamp}]\n{text}\n{'='*50}\n"
+    for m in messages:
+        text = m.get("text")
+        if not text:
+            continue
 
-    messages_cache.append(formatted)
-    if len(messages_cache) > MAX_MESSAGES:
-        messages_cache.pop(0)  # نحافظ على آخر رسالتين فقط
+        if text in sent_messages:
+            continue
 
-    print("✅ Message added:", number)
+        for info in users.values():
+            group_id = info.get("group_id")
+            if group_id:
+                send_message(
+                    group_id,
+                    f"""SELVA PANEL OTP ⚡
 
-# ================== FASTAPI ==================
-@app.get("/", response_class=HTMLResponse)
-async def home():
-    content = "".join(messages_cache)
+{text}
 
-    return f"""
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>KobraPanel OTP</title>
-<style>
-body {{
-    background:#0b0b0b;
-    color:#00ff99;
-    font-family: monospace;
-    padding:20px;
-}}
-h2 {{
-    text-align:center;
-}}
-pre {{
-    background:#000;
-    padding:20px;
-    border-radius:10px;
-    white-space:pre-wrap;
-    max-height: 80vh;
-    overflow-y: auto;
-    font-size: 18px;
-}}
-button {{
-    background:#00ff99;
-    color:#000;
-    padding:12px 20px;
-    border:none;
-    cursor:pointer;
-    font-weight:bold;
-    font-size:16px;
-    margin-bottom:15px;
-}}
-</style>
-<script>
-setInterval(() => location.reload(), 4000);
-</script>
-</head>
-<body>
-
-<h2>📡 KOBRA OTP LIVE (Last 2)</h2>
-
-<div style="text-align:center;">
-<button onclick="navigator.clipboard.writeText(document.getElementById('data').innerText)">
-📋 COPY ALL
-</button>
-</div>
-
-<pre id="data">{content}</pre>
-
-</body>
-</html>
+Panel:
+{PANEL_LINK}
 """
+                )
 
-# ================== STARTUP ==================
-@app.on_event("startup")
-async def startup():
-    await client.start()
-    asyncio.create_task(client.run_until_disconnected())
-    print("🚀 Telethon connected & site live")
+        sent_messages.add(text)
+
+        if len(sent_messages) > 1000:
+            sent_messages.clear()
 
 # ================== RUN ==================
+def run():
+    site_login()
+    print("✅ SELVA PANEL OTP Bot Started")
+
+    while True:
+        try:
+            handle_updates()
+            send_otps()
+            time.sleep(CHECK_INTERVAL)
+        except Exception as e:
+            print("⚠️ Error:", e)
+            time.sleep(5)
+
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    run()
