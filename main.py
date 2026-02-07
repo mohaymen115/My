@@ -10,7 +10,7 @@ from telethon import TelegramClient, events
 API_ID = 38077264
 API_HASH = "4dac72033d68a6bab7586e67edb182ae"
 SESSION_NAME = "selva_session"
-SOURCE_CHANNEL = "TGW_Otp_Station"
+SOURCE_CHANNEL = "TGW_Otp_Station"  # ضع اسم القناة هنا
 
 # ================== FILTER ==================
 REQUIRED_SERVICE = "💬 Service: Telegram"
@@ -31,7 +31,7 @@ def extract_number(text: str):
     return m.group(1) if m else None
 
 def is_allowed(number: str):
-    return number.startswith(ALLOWED_CODES)
+    return any(number.startswith(code) for code in ALLOWED_CODES)
 
 # ================== TELETHON ==================
 @client.on(events.NewMessage(chats=SOURCE_CHANNEL))
@@ -40,6 +40,7 @@ async def handler(event):
     if not text:
         return
 
+    # فلترة حسب الخدمة المطلوبة
     if REQUIRED_SERVICE not in text:
         return
 
@@ -74,20 +75,27 @@ body {{
     font-family: monospace;
     padding:20px;
 }}
+h2 {{
+    text-align:center;
+}}
 pre {{
     background:#000;
-    padding:15px;
+    padding:20px;
     border-radius:10px;
     white-space:pre-wrap;
+    max-height: 80vh;
+    overflow-y: auto;
+    font-size: 18px;
 }}
 button {{
     background:#00ff99;
     color:#000;
-    padding:10px 15px;
+    padding:12px 20px;
     border:none;
     cursor:pointer;
     font-weight:bold;
-    margin-bottom:10px;
+    font-size:16px;
+    margin-bottom:15px;
 }}
 </style>
 <script>
@@ -98,9 +106,11 @@ setInterval(() => location.reload(), 4000);
 
 <h2>📡 KOBRA OTP LIVE (Last 2)</h2>
 
+<div style="text-align:center;">
 <button onclick="navigator.clipboard.writeText(document.getElementById('data').innerText)">
 📋 COPY ALL
 </button>
+</div>
 
 <pre id="data">{content}</pre>
 
@@ -114,3 +124,8 @@ async def startup():
     await client.start()
     asyncio.create_task(client.run_until_disconnected())
     print("🚀 Telethon connected & site live")
+
+# ================== RUN ==================
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
