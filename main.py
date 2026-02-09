@@ -1,186 +1,183 @@
-import requests
-import time
-import json
-import os
+# ========= SELVA ALL-IN-ONE CHAT =========
+import os, json, secrets, datetime
+from fastapi import FastAPI, Request, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Text
+from sqlalchemy.orm import declarative_base, sessionmaker
+from passlib.hash import bcrypt
+import uvicorn
 
-# ================== CONFIG ==================
-BOT_TOKEN = "8584758167:AAG1m7fJNsMhzYh00q1v4DNyy000L406ASI"
+# ============ CONFIG ============
+OWNER_NAME = "Selva"
+OWNER_PASSWORD = "mohaymen"
+OWNER_BADGE = "الــكــبــيــر"
 
-SITE_URL = "https://kobrapanel-production.up.railway.app"
-LOGIN_URL = SITE_URL + "/login"
-API_URL = SITE_URL + "/api"
-SITE_PASSWORD = "selva1"
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-CHECK_INTERVAL = 5  # ثواني
-DATA_FILE = "users.json"
+engine = create_engine("sqlite:///selva.db", connect_args={"check_same_thread": False})
+Session = sessionmaker(bind=engine)
+Base = declarative_base()
 
-PANEL_LINK = "https://panel-production-15f6.up.railway.app/"
+app = FastAPI()
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+connections = {}
 
-# ================== STORAGE ==================
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w") as f:
-        json.dump({}, f)
+# ============ DATABASE ============
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True)
+    password = Column(String)
+    badge = Column(String, default="")
+    bio = Column(String, default="")
+    avatar = Column(String, default="")
+    is_owner = Column(Boolean, default=False)
+    online = Column(Boolean, default=False)
 
-def load_users():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
+class Message(Base):
+    __tablename__ = "messages"
+    id = Column(Integer, primary_key=True)
+    sender = Column(Integer)
+    receiver = Column(Integer)
+    content = Column(Text)
+    type = Column(String)
+    time = Column(String)
 
-def save_users(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+class Group(Base):
+    __tablename__ = "groups"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    owner = Column(Integer)
+    members = Column(Text)
 
-# ================== TELEGRAM API ==================
-def tg(method, payload=None):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
-    r = requests.post(url, json=payload, timeout=20)
-    return r.json()
+class Channel(Base):
+    __tablename__ = "channels"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    owner = Column(Integer)
 
-def send_message(chat_id, text, keyboard=None):
-    payload = {
-        "chat_id": chat_id,
-        "text": text
-    }
-    if keyboard:
-        payload["reply_markup"] = keyboard
-    tg("sendMessage", payload)
+Base.metadata.create_all(engine)
 
-# ================== SITE SESSION ==================
-session = requests.Session()
+# ============ INIT OWNER ============
+db = Session()
+if not db.query(User).filter_by(name=OWNER_NAME).first():
+    db.add(User(
+        name=OWNER_NAME,
+        password=bcrypt.hash(OWNER_PASSWORD),
+        badge=OWNER_BADGE,
+        is_owner=True
+    ))
+    db.commit()
+db.close()
 
-def site_login():
-    r = session.post(
-        LOGIN_URL,
-        data={"password": SITE_PASSWORD},
-        allow_redirects=True,
-        timeout=20
-    )
-    if r.status_code not in (200, 302):
-        raise Exception("❌ Site login failed")
-
-# ================== BOT LOGIC ==================
-users = load_users()
-sent_messages = set()
-offset = 0
-
-def main_menu():
-    return {
-        "inline_keyboard": [
-            [{"text": "➕ إضافة OTP", "callback_data": "add_otp"}]
-        ]
-    }
-
-def handle_updates():
-    global offset, users
-
-    r = requests.get(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates",
-        params={"offset": offset, "timeout": 30},
-        timeout=40
-    )
-
-    data = r.json()
-    if not data.get("ok"):
-        return
-
-    for update in data["result"]:
-        offset = update["update_id"] + 1
-
-        # ===== Messages =====
-        if "message" in update:
-            msg = update["message"]
-            chat_id = msg["chat"]["id"]
-            text = msg.get("text", "")
-            user_id = str(msg["from"]["id"])
-
-            if text == "/start":
-                send_message(
-                    chat_id,
-                    "👋 أهلاً بك في SELVA PANEL OTP\n\nاضغط الزر لإضافة جروب استقبال OTP",
-                    main_menu()
-                )
-
-            elif users.get(user_id, {}).get("waiting_group"):
-                try:
-                    group_id = int(text.strip())
-                    users[user_id] = {
-                        "group_id": group_id,
-                        "waiting_group": False
-                    }
-                    save_users(users)
-
-                    send_message(
-                        chat_id,
-                        "✅ تم حفظ ID الجروب\n\nسيتم إرسال OTP تلقائيًا"
-                    )
-                except:
-                    send_message(chat_id, "❌ ابعت ID الجروب رقم فقط")
-
-        # ===== Buttons =====
-        if "callback_query" in update:
-            cq = update["callback_query"]
-            user_id = str(cq["from"]["id"])
-            chat_id = cq["message"]["chat"]["id"]
-            data_cb = cq["data"]
-
-            if data_cb == "add_otp":
-                users[user_id] = {
-                    "waiting_group": True
-                }
-                save_users(users)
-
-                send_message(
-                    chat_id,
-                    "📥 ابعت الآن ID الجروب\n\nمثال:\n-1001234567890"
-                )
-
-# ================== OTP SENDER ==================
-def send_otps():
-    r = session.get(API_URL, timeout=20)
-    if r.status_code != 200:
-        return
-
-    messages = r.json()
-
-    for m in messages:
-        text = m.get("text")
-        if not text:
-            continue
-
-        if text in sent_messages:
-            continue
-
-        for info in users.values():
-            group_id = info.get("group_id")
-            if group_id:
-                send_message(
-                    group_id,
-                    f"""SELVA PANEL OTP ⚡
-
-{text}
-
-Panel:
-{PANEL_LINK}
+# ============ LOGIN ============
+@app.get("/", response_class=HTMLResponse)
+def login_page():
+    return """
+<h2>Selva Chat</h2>
+<form method="post" action="/login">
+<input name="name" placeholder="Name"><br>
+<input name="password" type="password" placeholder="Password"><br>
+<button>Login / Register</button>
+</form>
 """
-                )
 
-        sent_messages.add(text)
+@app.post("/login")
+def login(name: str = Form(...), password: str = Form(...)):
+    db = Session()
+    user = db.query(User).filter_by(name=name).first()
+    if user:
+        if not bcrypt.verify(password, user.password):
+            return "Wrong password"
+    else:
+        user = User(name=name, password=bcrypt.hash(password))
+        db.add(user)
+        db.commit()
+    res = RedirectResponse("/chat", 302)
+    res.set_cookie("uid", str(user.id))
+    return res
 
-        if len(sent_messages) > 1000:
-            sent_messages.clear()
+# ============ CHAT UI ============
+@app.get("/chat", response_class=HTMLResponse)
+def chat(request: Request):
+    uid = request.cookies.get("uid")
+    if not uid:
+        return RedirectResponse("/")
+    db = Session()
+    u = db.query(User).get(int(uid))
+    return f"""
+<h3>{u.name} {u.badge}</h3>
+ID: {u.id}<br>
+<textarea id=msg></textarea><br>
+<input id=to placeholder="User ID">
+<button onclick=send()>Send</button>
+<pre id=box></pre>
 
-# ================== RUN ==================
-def run():
-    site_login()
-    print("✅ SELVA PANEL OTP Bot Started")
+<input type=file id=file>
+<button onclick=upload()>Send File</button>
 
-    while True:
-        try:
-            handle_updates()
-            send_otps()
-            time.sleep(CHECK_INTERVAL)
-        except Exception as e:
-            print("⚠️ Error:", e)
-            time.sleep(5)
+<script>
+let ws=new WebSocket("ws://"+location.host+"/ws/{u.id}");
+ws.onmessage=e=>box.textContent+=e.data+"\\n";
 
+function send(){{
+ ws.send(JSON.stringify({{to:to.value,msg:msg.value,type:"text"}}))
+ msg.value=""
+}}
+
+function upload(){{
+ let f=file.files[0]
+ let fd=new FormData()
+ fd.append("file",f)
+ fetch("/upload",{method:"POST",body:fd})
+ .then(r=>r.text()).then(p=>{{
+ ws.send(JSON.stringify({{to:to.value,msg:p,type:"file"}}))
+ }})
+}}
+</script>
+"""
+
+# ============ UPLOAD ============
+@app.post("/upload")
+async def upload(file: UploadFile):
+    path = UPLOAD_DIR + "/" + secrets.token_hex(8) + "_" + file.filename
+    with open(path, "wb") as f:
+        f.write(await file.read())
+    return path
+
+# ============ WEBSOCKET ============
+@app.websocket("/ws/{uid}")
+async def ws(ws: WebSocket, uid: int):
+    await ws.accept()
+    connections[uid] = ws
+    db = Session()
+    db.query(User).get(uid).online = True
+    db.commit()
+
+    try:
+        while True:
+            data = await ws.receive_json()
+            to = int(data["to"])
+            msg = data["msg"]
+            t = data["type"]
+            db.add(Message(
+                sender=uid,
+                receiver=to,
+                content=msg,
+                type=t,
+                time=str(datetime.datetime.now())
+            ))
+            db.commit()
+            sender = db.query(User).get(uid).name
+            if to in connections:
+                await connections[to].send_text(f"{sender}: {msg}")
+    except WebSocketDisconnect:
+        connections.pop(uid)
+        db.query(User).get(uid).online = False
+        db.commit()
+
+# ============ RUN ============
 if __name__ == "__main__":
-    run()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
