@@ -1,5 +1,4 @@
+telethon
+pyTelegramBotAPI
+pillow
 requests
-passlib
-sqlalchemy
-uvicorn
-fastapi
