@@ -1,7 +1,5 @@
 import os
-import threading
 from telethon import TelegramClient, events
-import telebot
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -11,22 +9,21 @@ api_id = 34034006
 api_hash = "3c072a85099d74436802a2ca6ca1df6b"
 session_name = "session"
 
-source_channel = -1003808609180   # آيدي قناتك الخاصة
-bot_token = "8388224467:AAHtsoKJuWHA3aSVve-gFigtCqXQEANMru0"
-group_id = -1003573081848        # آيدي الجروب
+source_channel = -1003808609180   # آيدي القناة الخاصة
+target_group = -1003573081848     # آيدي الجروب
 
 channel_name = "My Private Channel"
 watermark = "@YourUsername"
 # ===========================
 
 client = TelegramClient(session_name, api_id, api_hash)
-bot = telebot.TeleBot(bot_token)
 
 def ar(text):
     return get_display(arabic_reshaper.reshape(text))
 
 def text_to_image(text, filename="msg.png"):
-    img = Image.new("RGB", (900, 600), "black")
+    width, height = 900, 600
+    img = Image.new("RGB", (width, height), "black")
     draw = ImageDraw.Draw(img)
 
     try:
@@ -43,29 +40,15 @@ def text_to_image(text, filename="msg.png"):
     img.save(filename)
     return filename
 
-# لما توصله صورة من Telethon يبعتها للجروب
-@bot.message_handler(content_types=['photo'])
-def forward_to_group(message):
-    bot.send_photo(group_id, message.photo[-1].file_id)
-
-def run_bot():
-    print("Bot running...")
-    bot.infinity_polling()
-
 @client.on(events.NewMessage(chats=source_channel))
 async def handler(event):
     if not event.raw_text:
         return
 
     img = text_to_image(event.raw_text)
-    await client.send_file(f"@{bot.get_me().username}", img)
+    await client.send_file(target_group, img)
     os.remove(img)
 
-def run_telethon():
-    print("Telethon running...")
-    client.start()
-    client.run_until_disconnected()
-
-# تشغيل الاثنين مع بعض
-threading.Thread(target=run_bot).start()
-run_telethon()
+print("Bot is running on Railway...")
+client.start()
+client.run_until_disconnected()
