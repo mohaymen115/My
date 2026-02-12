@@ -28,11 +28,11 @@ IGNORE_TEXTS = [
 
 IGNORE_BOTS = ["MissRose_bot"]
 
-
+# ==== دالة تعديل النص العربي ====
 def ar(text):
     return get_display(arabic_reshaper.reshape(text))
 
-
+# ==== دالة تحويل النص لصورة ====
 def text_to_image(text, filename="msg.png"):
     width, height = 900, 600
 
@@ -48,86 +48,95 @@ def text_to_image(text, filename="msg.png"):
 
     reshaped_text = ar(text)
 
-    dummy = ImageDraw.Draw(img)
-    bbox = dummy.multiline_textbbox((0, 0), reshaped_text, font=font, align="center")
+    draw_dummy = ImageDraw.Draw(img)
+    # لف النص لو طويل
+    lines = []
+    words = reshaped_text.split()
+    line = ""
+    for word in words:
+        test = line + " " + word if line else word
+        if draw_dummy.textlength(test, font=font) < width - 100:
+            line = test
+        else:
+            lines.append(line)
+            line = word
+    lines.append(line)
+    final_text = "\n".join(lines)
+
+    bbox = draw_dummy.multiline_textbbox((0, 0), final_text, font=font, align="center")
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
-
     x = (width - text_width) / 2
     y = (height - text_height) / 2
 
-    # ===== طبقة التوهج =====
+    # ===== توهج نيون =====
     glow_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     glow_draw = ImageDraw.Draw(glow_layer)
-
     glow_draw.multiline_text(
         (x, y),
-        reshaped_text,
+        final_text,
         font=font,
-        fill=(0, 255, 255, 255),  # لون النيون (سماوي)
+        fill=(0, 255, 255, 255),  # نيون سماوي
         align="center",
+        spacing=10
     )
-
     glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(15))
-
     img = Image.alpha_composite(img, glow_layer)
 
     # ===== النص الأبيض فوق التوهج =====
     final_draw = ImageDraw.Draw(img)
     final_draw.multiline_text(
         (x, y),
-        reshaped_text,
+        final_text,
         font=font,
         fill="white",
         align="center",
+        spacing=10
     )
 
-    # اسم القناة فوق
+    # اسم القناة أعلى
     final_draw.text(
         (width / 2, 40),
         channel_name,
         fill="cyan",
         font=small_font,
-        anchor="mm",
+        anchor="mm"
     )
 
-    # العلامة المائية تحت
+    # العلامة المائية أسفل
     final_draw.text(
         (width / 2, height - 40),
         watermark,
         fill="gray",
         font=small_font,
-        anchor="mm",
+        anchor="mm"
     )
 
     img = img.convert("RGB")
     img.save(filename)
-
     return filename
 
-
+# ==== التعامل مع الرسائل الجديدة ====
 @client.on(events.NewMessage(chats=source_channel))
 async def handler(event):
-
     if not event.raw_text:
         return
 
     text = event.raw_text
 
-    # تجاهل رسائل معينة
-    for word in IGNORE_TEXTS:
-        if word in text:
-            return
+    # تجاهل رسائل محددة
+    if any(word in text for word in IGNORE_TEXTS):
+        return
 
-    # تجاهل رسائل من بوت معين
+    # تجاهل رسائل من بوتات معينة
     sender = await event.get_sender()
     if sender and sender.username in IGNORE_BOTS:
         return
 
+    # إنشاء الصورة وإرسالها
     img = text_to_image(text)
     await client.send_file(target_group, img)
     os.remove(img)
-
 
 print("Bot is running...")
 client.start()
