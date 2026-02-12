@@ -1,4 +1,5 @@
 telethon
 pyTelegramBotAPI
 pillow
-requests
+arabic-reshaper
+python-bidi
