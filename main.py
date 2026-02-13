@@ -3,7 +3,6 @@ import logging
 import hashlib
 from datetime import datetime
 import requests
-
 from telegram import Bot
 from telegram.ext import Application
 
@@ -46,10 +45,7 @@ class PanelAPI:
         try:
             r = self.session.post(
                 f"{PANEL_URL}/api/auth/login",
-                json={
-                    "username": PANEL_USERNAME,
-                    "password": PANEL_PASSWORD
-                },
+                json={"username": PANEL_USERNAME, "password": PANEL_PASSWORD},
                 timeout=15
             )
             if r.status_code == 200:
@@ -69,8 +65,7 @@ class PanelAPI:
             if r.status_code == 200:
                 try:
                     data = r.json()
-                    if isinstance(data, list):
-                        return data
+                    return data
                 except ValueError:
                     logger.error("Invalid JSON from panel")
         except Exception as e:
@@ -109,7 +104,7 @@ async def delete_message_later(chat_id, message_id, delay):
         pass
 
 # ============================================
-# EDIT MESSAGE WITH VIDEO
+# EDIT MESSAGE TO VIDEO
 # ============================================
 
 async def edit_message_with_video(chat_id, message_id):
@@ -146,6 +141,7 @@ async def background_monitor():
     while True:
         try:
             messages = scraper.fetch_messages()
+            print("Fetched messages:", messages)  # ✅ للتأكد
             for msg in messages:
                 if isinstance(msg, dict) and otp_filter.is_new(msg):
                     text = (
