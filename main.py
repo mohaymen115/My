@@ -1,10 +1,9 @@
 import asyncio
 import logging
-import requests
 import hashlib
-import threading
-import time
 from datetime import datetime
+import requests
+
 from telegram import Bot
 from telegram.ext import Application
 
@@ -25,14 +24,11 @@ DELETE_AFTER_SECONDS = 300
 EDIT_AFTER_SECONDS = 90
 
 # ============================================
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=BOT_TOKEN)
 application = Application.builder().token(BOT_TOKEN).build()
-
-bot_loop = None
 
 # ============================================
 # PANEL API
@@ -58,18 +54,26 @@ class PanelAPI:
                 self.session.headers.update({
                     "Authorization": f"Bearer {self.token}"
                 })
+                logger.info("Logged in to panel successfully")
                 return True
+            else:
+                logger.error(f"Login failed: {r.status_code}")
         except Exception as e:
-            logger.error(e)
+            logger.error(f"Login exception: {e}")
         return False
 
     def fetch_messages(self):
         try:
             r = self.session.get(f"{PANEL_URL}/api/sms?limit=50", timeout=15)
             if r.status_code == 200:
-                return r.json()
+                try:
+                    data = r.json()
+                    if isinstance(data, list):
+                        return data
+                except ValueError:
+                    logger.error("Invalid JSON from panel")
         except Exception as e:
-            logger.error(e)
+            logger.error(f"Fetch messages exception: {e}")
         return []
 
 scraper = PanelAPI()
@@ -100,19 +104,21 @@ async def delete_message_later(chat_id, message_id, delay):
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except:
+    except Exception:
         pass
 
 # ============================================
-# CONVERT TO VIDEO AFTER 90s
+# EDIT MESSAGE WITH VIDEO
 # ============================================
 
 async def edit_message_with_video(chat_id, message_id):
     await asyncio.sleep(EDIT_AFTER_SECONDS)
 
     try:
+        # delete original OTP message
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
 
+        # send video
         sent_video = await bot.send_video(
             chat_id=chat_id,
             video=VIDEO_URL,
@@ -123,12 +129,13 @@ async def edit_message_with_video(chat_id, message_id):
             )
         )
 
+        # schedule deletion
         asyncio.create_task(
             delete_message_later(chat_id, sent_video.message_id, DELETE_AFTER_SECONDS)
         )
 
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Edit message exception: {e}")
 
 # ============================================
 # SEND OTP
@@ -149,57 +156,40 @@ async def async_send_otp(message):
         delete_message_later(GROUP_ID, sent_msg.message_id, DELETE_AFTER_SECONDS)
     )
 
-def send_otp(message):
-    asyncio.run_coroutine_threadsafe(async_send_otp(message), bot_loop)
-
 # ============================================
 # BACKGROUND MONITOR
 # ============================================
 
-def background_monitor():
+async def background_monitor():
     while True:
         try:
             messages = scraper.fetch_messages()
 
             for msg in messages:
-                if otp_filter.is_new(msg):
-
+                if isinstance(msg, dict) and otp_filter.is_new(msg):
                     text = (
                         "<b>✦ NEW OTP ✦</b>\n\n"
                         f"📱 {msg.get('number','Unknown')}\n"
                         f"💬 {msg.get('content','')}"
                     )
+                    await async_send_otp(text)
 
-                    send_otp(text)
-
-            time.sleep(30)
+            await asyncio.sleep(30)
 
         except Exception as e:
-            logger.error(e)
-            time.sleep(10)
-
-# ============================================
-# START BOT (NO UPDATER ERROR)
-# ============================================
-
-async def start_bot():
-    global bot_loop
-    bot_loop = asyncio.get_event_loop()
-    await application.run_polling()
-
-def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_bot())
+            logger.error(f"Background monitor exception: {e}")
+            await asyncio.sleep(10)
 
 # ============================================
 # MAIN
 # ============================================
 
-threading.Thread(target=run_bot, daemon=True).start()
-threading.Thread(target=background_monitor, daemon=True).start()
+async def main():
+    # start background monitor as task
+    asyncio.create_task(background_monitor())
+    # run bot polling
+    await application.run_polling()
 
-print("BOT STARTED")
-
-while True:
-    time.sleep(1)
+if __name__ == "__main__":
+    print("BOT STARTED")
+    asyncio.run(main())
