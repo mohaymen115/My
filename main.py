@@ -1,4 +1,3 @@
-import os
 import asyncio
 import logging
 import requests
@@ -22,8 +21,8 @@ PANEL_PASSWORD = "selva123456"
 
 VIDEO_URL = "https://drive.google.com/uc?export=download&id=1OGS3-mnoM7Q6P-MTl3GDrtU2_9BvL3Mr"
 
-DELETE_AFTER_SECONDS = 300  # 5 دقائق
-EDIT_AFTER_SECONDS = 90     # دقيقة ونص
+DELETE_AFTER_SECONDS = 300
+EDIT_AFTER_SECONDS = 90
 
 # ============================================
 
@@ -51,25 +50,26 @@ class PanelAPI:
                 json={
                     "username": PANEL_USERNAME,
                     "password": PANEL_PASSWORD
-                }
+                },
+                timeout=15
             )
             if r.status_code == 200:
-                self.token = r.json()["token"]
+                self.token = r.json().get("token")
                 self.session.headers.update({
                     "Authorization": f"Bearer {self.token}"
                 })
                 return True
-        except:
-            pass
+        except Exception as e:
+            logger.error(e)
         return False
 
     def fetch_messages(self):
         try:
-            r = self.session.get(f"{PANEL_URL}/api/sms?limit=50")
+            r = self.session.get(f"{PANEL_URL}/api/sms?limit=50", timeout=15)
             if r.status_code == 200:
                 return r.json()
-        except:
-            pass
+        except Exception as e:
+            logger.error(e)
         return []
 
 scraper = PanelAPI()
@@ -179,19 +179,13 @@ def background_monitor():
             time.sleep(10)
 
 # ============================================
-# START BOT
+# START BOT (NO UPDATER ERROR)
 # ============================================
 
 async def start_bot():
     global bot_loop
     bot_loop = asyncio.get_event_loop()
-
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-
-    while True:
-        await asyncio.sleep(1)
+    await application.run_polling()
 
 def run_bot():
     loop = asyncio.new_event_loop()
