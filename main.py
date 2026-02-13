@@ -24,6 +24,9 @@ DELETE_AFTER_SECONDS = 300
 EDIT_AFTER_SECONDS = 90
 
 # ============================================
+# LOGGING
+# ============================================
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -51,9 +54,7 @@ class PanelAPI:
             )
             if r.status_code == 200:
                 self.token = r.json().get("token")
-                self.session.headers.update({
-                    "Authorization": f"Bearer {self.token}"
-                })
+                self.session.headers.update({"Authorization": f"Bearer {self.token}"})
                 logger.info("Logged in to panel successfully")
                 return True
             else:
@@ -113,12 +114,8 @@ async def delete_message_later(chat_id, message_id, delay):
 
 async def edit_message_with_video(chat_id, message_id):
     await asyncio.sleep(EDIT_AFTER_SECONDS)
-
     try:
-        # delete original OTP message
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-
-        # send video
         sent_video = await bot.send_video(
             chat_id=chat_id,
             video=VIDEO_URL,
@@ -128,12 +125,7 @@ async def edit_message_with_video(chat_id, message_id):
                 "https://t.me/selva_num"
             )
         )
-
-        # schedule deletion
-        asyncio.create_task(
-            delete_message_later(chat_id, sent_video.message_id, DELETE_AFTER_SECONDS)
-        )
-
+        asyncio.create_task(delete_message_later(chat_id, sent_video.message_id, DELETE_AFTER_SECONDS))
     except Exception as e:
         logger.error(f"Edit message exception: {e}")
 
@@ -142,19 +134,9 @@ async def edit_message_with_video(chat_id, message_id):
 # ============================================
 
 async def async_send_otp(message):
-    sent_msg = await bot.send_message(
-        chat_id=GROUP_ID,
-        text=message,
-        parse_mode="HTML"
-    )
-
-    asyncio.create_task(
-        edit_message_with_video(GROUP_ID, sent_msg.message_id)
-    )
-
-    asyncio.create_task(
-        delete_message_later(GROUP_ID, sent_msg.message_id, DELETE_AFTER_SECONDS)
-    )
+    sent_msg = await bot.send_message(chat_id=GROUP_ID, text=message, parse_mode="HTML")
+    asyncio.create_task(edit_message_with_video(GROUP_ID, sent_msg.message_id))
+    asyncio.create_task(delete_message_later(GROUP_ID, sent_msg.message_id, DELETE_AFTER_SECONDS))
 
 # ============================================
 # BACKGROUND MONITOR
@@ -164,7 +146,6 @@ async def background_monitor():
     while True:
         try:
             messages = scraper.fetch_messages()
-
             for msg in messages:
                 if isinstance(msg, dict) and otp_filter.is_new(msg):
                     text = (
@@ -173,9 +154,7 @@ async def background_monitor():
                         f"💬 {msg.get('content','')}"
                     )
                     await async_send_otp(text)
-
             await asyncio.sleep(30)
-
         except Exception as e:
             logger.error(f"Background monitor exception: {e}")
             await asyncio.sleep(10)
@@ -184,12 +163,9 @@ async def background_monitor():
 # MAIN
 # ============================================
 
-async def main():
-    # start background monitor as task
-    asyncio.create_task(background_monitor())
-    # run bot polling
-    await application.run_polling()
-
 if __name__ == "__main__":
     print("BOT STARTED")
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(background_monitor())
+    loop.create_task(application.run_polling())
+    loop.run_forever()
